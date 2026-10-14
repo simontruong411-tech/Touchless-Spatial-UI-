@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+
+# Du lieu do dac (file CSV co the lon, va la du lieu thuc nghiem - tu quyet dinh co dua len hay khong)
+logs/*
+!logs/.gitkeep
+
+# File loi khi chay
+crash_report.txt
+camera_test_result.png
+
+# Mo hinh 3D that (.obj) - kiem tra giay phep truoc khi dua len
+medical_models/*.obj
+medical_models/*.mtl
+
+# Anh y khoa that cua ban (neu co) - KHONG dua anh benh nhan that len mang
+# (anh mau sample_*.png o medical_images/ van duoc giu)
+medical_images/*
+!medical_images/sample_*.png
+
+# QUAN TRONG: neu ban sua mat khau Wi-Fi trong esp32code.ino thi KHONG commit ban do.
+# Cach an toan: tao file esp32code_local.ino (da bi chan ben duoi) de nap that.
+esp32code_local.ino
