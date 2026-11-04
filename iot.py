@@ -26,7 +26,7 @@ cập nhật lại ESP32_IP bên dưới.
 import requests
 
 # ==== SỬA IP NÀY CHO KHỚP VỚI IP HIỆN TẠI CỦA ESP32 ====
-ESP32_IP = "192.168.1.20"
+ESP32_IP = "172.20.10.3"
 
 # Thời gian chờ tối đa (giây) trước khi coi là gửi lệnh thất bại — để
 # tránh trường hợp ESP32 mất kết nối làm Python bị treo chờ vô thời hạn.

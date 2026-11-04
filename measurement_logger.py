@@ -16,6 +16,7 @@ và THÊM (không bắt buộc dùng):
     logger.start_task("MO_ANH_VA_DO")      # đo thời gian hoàn thành 1 nhiệm vụ thí nghiệm
     logger.end_task(success=True)
     logger.close()                         # ghi file tóm tắt (meta) + in kết quả
+    logger.extra_summary["performance"] = {...}  # (MỚI) thêm mục tóm tắt tùy ý vào meta
 
 CÁC FILE TẠO RA (trong thư mục logs/):
     session_<giờ>.csv        : nhật ký sự kiện, 1 dòng = 1 sự kiện
@@ -76,6 +77,8 @@ def categorize(event):
     e = event.upper()
     if e.startswith("SESSION_"):
         return "SESSION"
+    if e == "PERF":
+        return "PERFORMANCE"     # (MỚI) dòng hiệu năng định kỳ từ perf_monitor.py
     if e.startswith("PHASE_"):
         return "WORKFLOW"
     if e.startswith("WF_"):
@@ -137,6 +140,10 @@ class MeasurementLogger:
         self._open_task = None            # (name, t0)
         self._task_counter = 0
         self.case_ids = []
+        # (MỚI) Chương trình khác có thể gắn thêm mục tóm tắt, vd hiệu năng:
+        #   logger.extra_summary["performance"] = perf.summary()
+        # -> được gộp vào summary trong file _meta.json khi close().
+        self.extra_summary = {}
 
         print(f"[MeasurementLogger] Dang ghi log vao: {self.path}")
         self.log_event("SESSION", "SESSION_START",
@@ -238,6 +245,7 @@ class MeasurementLogger:
             "missed_gestures": self._counts.get("MISSED_GESTURE", 0),
             "hand_out_of_zone_events": self._counts.get("HAND_OUT_OF_ZONE", 0),
             "locks": self._counts.get("LOCK", 0),
+            **self.extra_summary,
         }
 
     def close(self):

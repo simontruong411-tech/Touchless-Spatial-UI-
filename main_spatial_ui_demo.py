@@ -17,7 +17,11 @@ HAI TAY
   Hai tay xa/gần nhau = ZOOM (không tính khi đang chỉnh sáng/cắt lớp).
 
 MÀN HÌNH (biến `mode`): IDLE (camera) / MENU_MAIN / IMAGE_VIEWER / MODEL_VIEWER /
-  WORKFLOW. Menu một tầng: QUY TRINH, ANH, XUONG 3D, DEN, GOI Y TA, KHAN CAP.
+  WORKFLOW / NOTEPAD. Menu một tầng: QUY TRINH, ANH, XUONG 3D, DEN, GOI Y TA, KY TEN.
+  KY TEN (notepad.py): Pinch tay phải = vẽ; nút SAVE = lưu PNG vào "drawings/"; nút BACK
+  = về menu; Snap tay trái = thoát về camera; GIỮ Open palm tay trái 0,8 s = xóa hết.
+  (Nút KHAN CAP đã được thay bằng KY TEN; hàm trigger_emergency_alert vẫn còn trong
+  file để tương thích nhưng không còn nút nào gọi nó.)
 
 AN TOÀN: Pinch+kéo tính theo quãng di chuyển và chỉ chạy khi đang Pinch (thả Pinch =
   "nhả côn"); nhiều tay cùng nhãn -> chọn tay lớn nhất; quy trình ca mổ không cho
@@ -33,7 +37,7 @@ LÀM MƯỢT: world_landmarks của mỗi tay được làm mượt TRƯỚC khi
   mổ bằng upload_tool.py (dùng chuột, cố ý không touchless). Xương mặc định là mô
   hình minh họa, không dùng chẩn đoán.
 
-IOT: bấm DEN / GOI Y TA / KHAN CAP gửi HTTP tới ESP32 (iot.py, sửa ESP32_IP trước).
+IOT: bấm DEN / GOI Y TA gửi HTTP tới ESP32 (iot.py, sửa ESP32_IP trước).
   Lệnh gọi đồng bộ, timeout 2 giây: nếu ESP32 mất mạng, vòng lặp có thể khựng tối đa
   2 giây mỗi lần bấm (nếu giật thì chuyển sang thread riêng).
 
@@ -52,13 +56,15 @@ import time
 from hand_utils import (
     HandTracker, detect_gesture, is_pinching,
     GestureStabilizer, CursorSmoother, LandmarkSmoother,
-    SwipeDetector, select_primary_hand,
+    select_primary_hand,
 )
 from snap_detector import SnapDetector
+from swipe import SwipeDetector
 from spatial_ui import SpatialMenu
 from image_viewer import ImageViewer
 from model_viewer import Model3DViewer
 from or_workflow import WorkflowScreen
+from notepad import Notepad, PalmHoldClear
 from measurement_logger import MeasurementLogger
 import iot
 from iot import turn_light_on, turn_light_off
@@ -84,9 +90,9 @@ PARTICIPANT_ID = "P01"
 SCENARIO = "mo_phong_ca_mo"
 CONDITIONS = {"anh_sang": "", "khoang_cach_cm": "", "gang_tay": ""}
 
-MENU_BUTTONS = ["QUY TRINH", "ANH", "XUONG 3D", "DEN", "GOI Y TA", "KHAN CAP"]
+MENU_BUTTONS = ["QUY TRINH", "ANH", "XUONG 3D", "DEN", "GOI Y TA", "KY TEN"]
 MENU_MODES = ("MENU_MAIN",)
-FULLSCREEN_MODES = ("IMAGE_VIEWER", "MODEL_VIEWER", "WORKFLOW")   # màn thay cho camera
+FULLSCREEN_MODES = ("IMAGE_VIEWER", "MODEL_VIEWER", "WORKFLOW", "NOTEPAD")   # màn thay cho camera
 
 # Phím cho NGƯỜI QUAN SÁT: ghi điều phần mềm không tự biết
 OBSERVER_KEYS = {
@@ -112,7 +118,9 @@ def log_iot(logger, mode, event, result):
 
 
 def trigger_emergency_alert():
-    """KHAN CAP: buzzer bíp nhanh + OLED "KHAN CAP!"."""
+    """KHAN CAP: buzzer bíp nhanh + OLED "KHAN CAP!".
+    (Hiện KHÔNG còn nút nào trên menu gọi hàm này - nút KHAN CAP đã được thay bằng KY TEN.
+    Giữ lại để tương thích; muốn bật lại chỉ cần thêm nút và nhánh `elif hovered == ...`.)"""
     print("[KHAN CAP] Bao dong! Buzzer + OLED...")
     return timed_call(iot.buzz_emergency)
 
@@ -242,8 +250,10 @@ def main():
     logger = MeasurementLogger(participant_id=PARTICIPANT_ID, scenario=SCENARIO, conditions=CONDITIONS)
     atexit.register(logger.close)   # lỗi/đóng đột ngột vẫn đóng log + ghi tóm tắt
     workflow = WorkflowScreen(frame_width=frame_width, frame_height=frame_height, logger=logger)
+    notepad = Notepad(frame_width=frame_width, frame_height=frame_height)
+    notepad_clear_hold = PalmHoldClear()   # đếm giữ Open palm tay trái để xóa hết
 
-    mode = "IDLE"            # IDLE | MENU_MAIN | IMAGE_VIEWER | MODEL_VIEWER | WORKFLOW
+    mode = "IDLE"            # IDLE | MENU_MAIN | IMAGE_VIEWER | MODEL_VIEWER | WORKFLOW | NOTEPAD
     light_on = False         # đồng bộ với ESP32 qua iot.py
     was_pinching = False     # pinch của frame trước (cạnh lên + hysteresis)
     last_pan_cursor = None   # cursor frame trước khi đang Pinch kéo (None = chưa kéo)
@@ -328,6 +338,10 @@ def main():
             smoothed_x, smoothed_y = cursor_smoother.update(raw_x, raw_y)
             if mode in MENU_MODES or mode == "WORKFLOW":
                 cursor_pos = (int(raw_x), int(raw_y))
+            elif mode == "NOTEPAD" and notepad.get_hover_button((raw_x, raw_y)) is not None:
+                # Ở KY TEN: vẽ thì dùng cursor đã làm mượt (nét mượt hơn), nhưng khi ngón tay
+                # ĐÃ vào vùng nút SAVE/BACK thì dùng vị trí thật để bấm không bị trượt.
+                cursor_pos = (int(raw_x), int(raw_y))
             else:
                 cursor_pos = (int(smoothed_x), int(smoothed_y))
             last_cursor_pos = cursor_pos
@@ -349,11 +363,11 @@ def main():
 
         # ---------- VẪY TAY TRÁI ở màn ẢNH: trái = SAU, phải = TRƯỚC ----------
         swipe_dir = None
-        if (mode == "IMAGE_VIEWER" and left_hand is not None
-                and left_gesture == "Open palm" and not is_pinching_now):
-            swipe_dir = swipe_detector.update(left_hand)
-        else:
-            swipe_detector.update(None)
+        swipe_ready = mode == "IMAGE_VIEWER" and left_hand is not None and not is_pinching_now
+        # Bộ nhận diện tự chịu được nhãn Open palm rớt ngắn (ảnh nhòe lúc tay chạy nhanh), nên
+        # luôn đưa tay vào và chỉ báo thêm "đang xòe hay không".
+        swipe_dir = swipe_detector.update(left_hand if swipe_ready else None,
+                                          palm_open=(left_gesture == "Open palm"))
         if swipe_dir == "left":
             image_viewer.next_image()
             logger.log_event(mode, "IMG_NEXT_SWIPE", detail=image_detail(image_viewer))
@@ -400,8 +414,43 @@ def main():
                         log_iot(logger, mode, f"DEN_{state}", result)
                     elif hovered == "GOI Y TA":
                         log_iot(logger, mode, "GOI_Y_TA", trigger_call_nurse_alert())
-                    elif hovered == "KHAN CAP":
-                        log_iot(logger, mode, "KHAN_CAP", trigger_emergency_alert())
+                    elif hovered == "KY TEN":
+                        mode = "NOTEPAD"
+                        main_menu.close()
+                        notepad.end_stroke()          # không mang nét dở dang từ lần trước
+                        last_pan_cursor = None        # None = chưa hạ bút
+                        notepad_clear_hold.reset()
+                        print("[CLICK] Mo Ky ten (ve)")
+                        logger.log_event(mode, "OPEN_KY_TEN")
+
+            elif mode == "NOTEPAD":
+                hovered = notepad.get_hover_button(cursor_pos)
+                if just_pinched and hovered is not None:
+                    right_status_text += f"  -> CLICK: {hovered}"
+                    if hovered == "SAVE":
+                        saved_path = notepad.save()
+                        print(f"[CLICK] Luu ban ky -> {saved_path}")
+                        logger.log_event(mode, "NOTE_SAVE", detail=saved_path or "trong")
+                    elif hovered == "BACK":
+                        notepad.end_stroke()
+                        last_pan_cursor = None
+                        go_menu()
+                elif is_pinching_now and hovered is None:
+                    # Dùng last_pan_cursor làm cờ "đang có nét": None = chưa hạ bút.
+                    # CHỈ hạ bút ở cạnh lên của Pinch (just_pinched). Vì sao: lúc bấm nút KY TEN
+                    # ở menu, ngón tay còn chụm thêm vài frame; nếu cho vẽ ngay thì để lại một
+                    # vệt mực ở chỗ nút menu. Chụm "mang theo" từ màn trước (hoặc từ nút
+                    # SAVE) phải thả ra rồi chụm lại mới vẽ.
+                    if last_pan_cursor is None:
+                        if just_pinched:
+                            notepad.start_stroke(cursor_pos)
+                            last_pan_cursor = cursor_pos
+                    else:
+                        notepad.draw_to(cursor_pos)
+                        last_pan_cursor = cursor_pos
+                else:
+                    notepad.end_stroke()              # thả Pinch (hoặc Pinch lên nút) = nhấc bút
+                    last_pan_cursor = None
 
             elif mode == "IMAGE_VIEWER":
                 hovered = image_viewer.get_hover_button(cursor_pos)
@@ -489,8 +538,25 @@ def main():
 
         was_pinching = is_pinching_now
 
+        # ---------- KY TEN: giữ Open palm tay trái 0,8 s = xóa hết ----------
+        # Tính ở ngoài khối `if cursor_pos is not None` để vẫn xóa được khi tay phải không
+        # trong khung. Mỗi frame gán lại clear_progress để thanh tiến trình tự tắt.
+        clear_progress = 0.0
+        if mode == "NOTEPAD":
+            cleared_now, clear_progress = notepad_clear_hold.update(left_gesture == "Open palm")
+            if cleared_now:
+                notepad.clear()
+                last_pan_cursor = None
+                logger.log_event(mode, "NOTE_CLEAR")
+                left_status_text += "  -> XOA KY TEN"
+        else:
+            notepad_clear_hold.reset()
+
         # ---------- HIỂN THỊ ----------
-        if mode == "IMAGE_VIEWER":
+        if mode == "NOTEPAD":
+            display = notepad.draw(cursor_pos=cursor_pos, is_pinching_now=is_clicking,
+                                   clear_progress=clear_progress)
+        elif mode == "IMAGE_VIEWER":
             display = image_viewer.draw(cursor_pos=cursor_pos, is_pinching_now=is_clicking)
         elif mode == "MODEL_VIEWER":
             display = model_viewer.draw(cursor_pos=cursor_pos, is_pinching_now=is_clicking)

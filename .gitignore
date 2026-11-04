@@ -25,3 +25,10 @@ medical_images/*
 # QUAN TRONG: neu ban sua mat khau Wi-Fi trong esp32code.ino thi KHONG commit ban do.
 # Cach an toan: tao file esp32code_local.ino (da bi chan ben duoi) de nap that.
 esp32code_local.ino
+
+# Ban ve/ky tay luu tu man KY TEN (notepad.py) - co the chua noi dung nhay cam, KHONG dua len repo cong khai
+drawings/
+drawings_test/
+
+# Ban sao luu truoc khi sua lon
+backup/
